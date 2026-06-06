@@ -12,6 +12,7 @@ import threading
 from threading import Thread
 from dotenv import load_dotenv
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import streamlit as st
 
 load_dotenv()
 
@@ -773,21 +774,31 @@ async def start_server():
     clean_files()
     
 def run_server():
-    server = HTTPServer(('0.0.0.0', PORT), RequestHandler)
-    print(f"Server is running on port {PORT}")
-    print(f"Running done！")
-    server.serve_forever()
+    try:
+        server = HTTPServer(('0.0.0.0', PORT), RequestHandler)
+        print(f"Server is running on port {PORT}")
+        print(f"Running done！")
+        server.serve_forever()
+    except OSError as e:
+        print(f"Server failed to start on port {PORT}: {e}")
     
-def run_async():
+# 使用 Streamlit 专属资源缓存保护初始化逻辑，保证全局只执行一次
+@st.cache_resource
+def init_app_services():
+    print("[+] 正在初始化应用并启动核心服务...")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(start_server()) 
-    
-    while True:
-        time.sleep(3600)
-        
-if __name__ == "__main__":
-    run_async()
+    return "Running"
 
 def main():
-    run_async()
+    # 只要这行代码被执行，Streamlit 就会确保它在第一次运行后被“冻结”，避免端口二次绑定
+    service_status = init_app_services()
+    
+    # 渲染一个简易的前端，避免 Streamlit 抛出空脚本警告
+    st.title("🚀 后台核心监控面板")
+    st.success(f"当前核心运行状态: {service_status}")
+    st.info(f"订阅路径: `/{SUB_PATH}` | 服务端口: `{PORT}`")
+
+if __name__ == "__main__":
+    main()
