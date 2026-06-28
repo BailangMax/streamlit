@@ -1,284 +1,400 @@
 import os
+os.environ["TERM"] = "xterm"
 import re
+import shutil
+import subprocess
+import requests
 import json
 import time
 import base64
-import shutil
 import asyncio
-import requests
-import platform
-import subprocess
-import threading
-from threading import Thread
-from dotenv import load_dotenv
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import streamlit as st
 
-load_dotenv()
+FILE_PATH = os.environ.get('FILE_PATH', './.tmp')
+XCONF_PATH = os.path.join(FILE_PATH, 'xconf')
+INTERVAL_SECONDS = int(os.environ.get("TIME", 100))
+OPENSERVER = os.environ.get('OPENSERVER', 'true').lower() == 'true'
+KEEPALIVE = os.environ.get('KEEPALIVE', 'true').lower() == 'true'
+CFIP = os.environ.get('CFIP', 'saas.sin.fan')
+PORT = int(os.environ.get('SERVER_PORT') or os.environ.get('PORT') or 3000)
+V_PORT = int(os.environ.get('V_PORT', 8001))
+CFPORT = int(os.environ.get('CFPORT', 443))
+SUB_URL = os.environ.get('SUB_URL', '')
+MYIP_URL = os.environ.get('MYIP_URL', '')
 
-# Environment variables
-UPLOAD_URL = os.environ.get('UPLOAD_URL', '')          # 节点或订阅上传地址,只填写这个地址将上传节点,同时填写PROJECT_URL将上传订阅
-PROJECT_URL = os.environ.get('PROJECT_URL', '')        # 项目url,需要自动保活或自动上传订阅需要填写,例如：https://www.google.com,
-AUTO_ACCESS = os.environ.get('AUTO_ACCESS', 'false').lower() == 'true'  # false关闭自动保活, true开启自动保活，默认关闭
-FILE_PATH = os.environ.get('FILE_PATH', './.cache')    # 运行路径,sub.txt保存路径
-SUB_PATH = os.environ.get('SUB_PATH', 'sub')           # 订阅token,默认sub，例如：https://www.google.com/sub
-UUID = os.environ.get('UUID', 'ff24ebc4-8b2f-4eae-a40b-0fe47473541f')  # UUID,如使用哪吒v1,在不同的平台部署需要修改,否则会覆盖
-NEZHA_SERVER = os.environ.get('NEZHA_SERVER', 'a.holoy.dpdns.org:36958')      # 哪吒面板域名或ip, v1格式: nz.serv00.net:8008, v0格式: nz.serv00.net
-NEZHA_PORT = os.environ.get('NEZHA_PORT', '')          # v1哪吒请留空, v0哪吒的agent通信端口
-NEZHA_KEY = os.environ.get('NEZHA_KEY', 'VHTEk5wXIwqMobTFE7wtJYy88ZtIRops')            # v1哪吒的NZ_CLIENT_SECRET或v0哪吒agent密钥
-ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN', 'streamlit.holoy.qzz.io')        # Argo固定隧道域名,留空即使用临时隧道
-ARGO_AUTH = os.environ.get('ARGO_AUTH', 'eyJhIjoiYjNiMmRhZjE1YjIzYmQ2ZmIzNzZlNGViYTRhYzczYTEiLCJ0IjoiZmQzNzY4NTktNWEzYS00YjE2LWIyOGYtM2RjYzc0MThlZjAxIiwicyI6IlptSmpZVEV4WlRJdFlXWmxaUzAwTlRNekxXSmxPR0V0TWpVeU1Ea3hZV1UyWW1ZeCJ9')            # Argo固定隧道密钥,留空即使用临时隧道
-ARGO_PORT = int(os.environ.get('ARGO_PORT', '8001'))   # Argo端口,使用固定隧道token需在cloudflare后台设置端口和这里一致
-TUIC_PORT_STR = os.environ.get('TUIC_PORT', '')        # tuic端口,支持多端口的玩具可以填写开启,否则保持不变
-HY2_PORT_STR = os.environ.get('HY2_PORT', '')          # hy2端口,支持多端口的玩具可以填写开启,否则保持不变
-REALITY_PORT_STR = os.environ.get('REALITY_PORT', '')  # Reality端口,支持多端口的玩具可以填写开启,否则保持不变
-CFIP = os.environ.get('CFIP', 'cdns.doon.eu.org')      # 优选ip或优选域名
-CFPORT = int(os.environ.get('CFPORT', '443'))          # 优选ip或优选域名对应端口
-PORT = int(os.environ.get('PORT', '3000'))             # http服务端口,订阅端口
-NAME = os.environ.get('NAME', 'streamlit')                   # 节点名称
-CHAT_ID = os.environ.get('CHAT_ID', '7627328147')                # Telegram chat_id,推送节点到tg,两个便来给你同时填写才会推送
-BOT_TOKEN = os.environ.get('BOT_TOKEN', '8712829238:AAEkSunL7neEXazQUzTXFaWFbajD2SQEA-Y')            # Telegram bot_token
+VLPATH = os.environ.get('VLPATH', 'startvl')
+XHPPATH = os.environ.get('XHPPATH', '')
 
-# Create running folder
-def create_directory():
-    print('\033c', end='')
-    if not os.path.exists(FILE_PATH):
-        os.makedirs(FILE_PATH)
-        print(f"{FILE_PATH} is created")
+UUID = os.environ.get('UUID', 'bfb15fc7-a935-46f0-a4e3-c858e699b08d')
+NEZHA_VERSION = os.environ.get('NEZHA_VERSION', 'V1')
+NEZHA_SERVER = os.environ.get('NEZHA_SERVER', 'a.holoy.dpdns.org')
+NEZHA_KEY = os.environ.get('NEZHA_KEY', 'VHTEk5wXIwqMobTFE7wtJYy88ZtIRops')
+NEZHA_PORT = os.environ.get('NEZHA_PORT', '36958')
+SUB_NAME = os.environ.get('SUB_NAME', 'streamlit')
+MY_DOMAIN = os.environ.get('MY_DOMAIN', '')
+
+ARGO_DOMAIN = os.environ.get('ARGO_DOMAIN', 'streamlit.holoy.qzz.io')
+ARGO_AUTH = os.environ.get('ARGO_AUTH', 'eyJhIjoiYjNiMmRhZjE1YjIzYmQ2ZmIzNzZlNGViYTRhYzczYTEiLCJ0IjoiZmQzNzY4NTktNWEzYS00YjE2LWIyOGYtM2RjYzc0MThlZjAxIiwicyI6IlptSmpZVEV4WlRJdFlXWmxaUzAwTlRNekxXSmxPR0V0TWpVeU1Ea3hZV1UyWW1ZeCJ9')
+
+# set page
+def main_page():
+    st.markdown("""
+    <html>
+    <head>
+        <title>my home page</title>
+    </head>
+    <body>
+        <h1>Welcome to my space!</h1>
+        <p>Very happy to make friends with you all!</p>
+    </body>
+    </html>
+    """, unsafe_allow_html=True)
+
+# Define the content of the health check page
+def health_page():
+    st.title("System Status")
+    st.success("Service is running: 200 OK")
+    st.json({"status": "healthy", "code": 200})
+
+# Check if the function is defined, then add it to the configuration
+pg = st.navigation({
+    "Main": [
+        st.Page(main_page, title="Home", url_path="home", icon="🏠")
+    ],
+    "System": [
+        st.Page(health_page, title="Health Check", url_path="health", icon="✅")
+    ]
+})
+
+def createFolder(folderPath):
+    if not os.path.exists(folderPath):
+        os.makedirs(folderPath)
+        print(f"{folderPath} is created")
     else:
-        print(f"{FILE_PATH} already exists")
+        print(f"{folderPath} already exists")
 
-# 端口变量赋值
-TUIC_PORT = int(TUIC_PORT_STR) if TUIC_PORT_STR and TUIC_PORT_STR.isdigit() else None
-HY2_PORT = int(HY2_PORT_STR) if HY2_PORT_STR and HY2_PORT_STR.isdigit() else None
-REALITY_PORT = int(REALITY_PORT_STR) if REALITY_PORT_STR and REALITY_PORT_STR.isdigit() else None
-
-# Global variables
-private_key = ''
-public_key = ''
-npm_path = os.path.join(FILE_PATH, 'npm')
-php_path = os.path.join(FILE_PATH, 'php')
-web_path = os.path.join(FILE_PATH, 'web')
-bot_path = os.path.join(FILE_PATH, 'bot')
-sub_path = os.path.join(FILE_PATH, 'sub.txt')
-list_path = os.path.join(FILE_PATH, 'list.txt')
-boot_log_path = os.path.join(FILE_PATH, 'boot.log')
-config_path = os.path.join(FILE_PATH, 'config.json')
-
-# Delete nodes
-def delete_nodes():
-    try:
-        if not UPLOAD_URL:
-            return
-
-        if not os.path.exists(sub_path):
-            return
+pathsToDelete = ['config.yml', 'xconf', 'tunnel.json', 'tunnel.yml', 'boot.log', 'log.txt']
+def cleanupOldFiles():
+    for file in pathsToDelete:
+        filePath = os.path.join(FILE_PATH, file)
 
         try:
-            with open(sub_path, 'r') as file:
-                file_content = file.read()
-        except:
-            return None
-
-        decoded = base64.b64decode(file_content).decode('utf-8')
-        nodes = [line for line in decoded.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
-
-        if not nodes:
-            return
-
-        try:
-            requests.post(f"{UPLOAD_URL}/api/delete-nodes", 
-                          data=json.dumps({"nodes": nodes}),
-                          headers={"Content-Type": "application/json"})
-        except:
-            return None
-    except Exception as e:
-        print(f"Error in delete_nodes: {e}")
-        return None
-
-# Clean up old files
-def cleanup_old_files():
-    paths_to_delete = ['web', 'bot', 'npm', 'boot.log', 'list.txt']
-    for file in paths_to_delete:
-        file_path = os.path.join(FILE_PATH, file)
-        try:
-            if os.path.exists(file_path):
-                if os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
+            if os.path.exists(filePath):
+                if os.path.isdir(filePath):
+                    shutil.rmtree(filePath)
+                    # print(f"{filePath} deleted")
                 else:
-                    os.remove(file_path)
-        except Exception as e:
-            print(f"Error removing {file_path}: {e}")
+                    os.remove(filePath)
+                    # print(f"{filePath} deleted")
+            else:
+                # print(f"Skip Delete {filePath}")
+                pass
+        except Exception as err:
+            # print(f"Failed to delete {filePath}: {err}")
+            pass
 
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(b'Hello World')
-            
-        elif self.path == f'/{SUB_PATH}':
-            try:
-                with open(sub_path, 'rb') as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header('Content-type', 'text/plain')
-                self.end_headers()
-                self.wfile.write(content)
-            except:
-                self.send_response(404)
-                self.end_headers()
-        else:
-            self.send_response(404)
-            self.end_headers()
+async def exec_promise(command, options=None, wait_for_completion=False):
+    if options is None:
+        options = {}
 
-    def log_message(self, format, *args):
-        pass
-    
-# Determine system architecture
-def get_system_architecture():
-    architecture = platform.machine().lower()
-    if 'arm' in architecture or 'aarch64' in architecture:
-        return 'arm'
-    else:
-        return 'amd'
-
-# Download file based on architecture
-def download_file(file_name, file_url):
-    file_path = os.path.join(FILE_PATH, file_name)
     try:
-        response = requests.get(file_url, stream=True)
-        response.raise_for_status()
-        
-        with open(file_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        print(f"Download {file_name} successfully")
-        return True
-    except Exception as e:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        print(f"Download {file_name} failed: {e}")
-        return False
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            **options
+        )
 
-# Get files for architecture
-def get_files_for_architecture(architecture):
-    if architecture == 'arm':
-        base_files = [
-            {"fileName": "web", "fileUrl": "https://arm64.ssss.nyc.mn/sb"},
-            {"fileName": "bot", "fileUrl": "https://arm64.ssss.nyc.mn/bot"}
+        if wait_for_completion:
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                error = Exception(f"Command failed with exit code {proc.returncode}")
+                error.code = proc.returncode
+                error.stderr = stderr.decode().strip()
+                raise error
+
+            return stdout.decode().strip()
+        else:
+            # print(f"'{command}' is running")
+            return proc
+
+    except Exception as e:
+        if not hasattr(e, 'code'):
+            e.code = -1
+        if not hasattr(e, 'stderr'):
+            e.stderr = str(e)
+        raise
+
+async def detect_process(processname):
+    methods = [
+        {'cmd': f'pidof "{processname}"', 'name': 'pidof'},
+        {'cmd': f'pgrep -x "{processname}"', 'name': 'pgrep'},
+        {'cmd': f'ps -eo pid,comm | awk -v name="{processname}" \'$2 == name {{print $1}}\'', 'name': 'ps+awk'}
+    ]
+
+    for method in methods:
+        try:
+            stdout = await exec_promise(method['cmd'], wait_for_completion=True)
+            if stdout:
+                return re.sub(r'\n+', ' ', stdout)
+        except Exception as e:
+            if hasattr(e, 'code') and e.code not in (127, 1):
+                print(f'[detect_process] {method["name"]} error:', str(e))
+            continue
+
+    return ''
+
+async def kill_process(process_name):
+    print(f"Attempting to kill process: {process_name}")
+
+    try:
+        pids = await detect_process(process_name)
+
+        if not pids:
+            print(f"Process '{process_name}' not found.")
+            return
+
+        result = await exec_promise(f"kill -9 {pids}")
+
+        msg = f"Killed process (PIDs: {pids})"
+        print(msg)
+        return {'success': True, 'message': msg}
+
+    except Exception as e:
+        msg = f"Kill failed: {str(e)}"
+        print(f"Error: {msg}")
+        return {'success': False, 'message': msg}
+
+def generate_config():
+    vlpath = '/' + str(VLPATH)
+    xhppath = '/' + str(XHPPATH)
+    inbound = {
+        "log": {
+            "access": "/dev/null",
+            "error": "/dev/null",
+            "loglevel": "none"
+        },
+        "dns": {
+            "servers": [
+                "https+local://8.8.8.8/dns-query"
+            ]
+        }
+    };
+    with open(os.path.join(XCONF_PATH, 'inbound.json'), 'w', encoding='utf-8') as inbound_file:
+        json.dump(inbound, inbound_file, ensure_ascii=False, indent=2)
+
+    if VLPATH:
+        inbound_v = {
+            "inbounds": [
+                {
+                    "port": V_PORT,
+                    "listen": "::",
+                    "protocol": "vless",
+                    "settings": {
+                        "clients": [
+                            {
+                                "id": UUID,
+                                "level": 0
+                            }
+                        ],
+                        "decryption": "none"
+                    },
+                    "streamSettings": {
+                        "network": "ws",
+                        "security": "none",
+                        "wsSettings": {
+                            "path": vlpath
+                        }
+                    },
+                    "sniffing": {
+                        "enabled": True,
+                        "destOverride": [
+                            "http",
+                            "tls",
+                            "quic"
+                        ],
+                        "metadataOnly": False
+                    }
+                }
+            ]
+        };
+        with open(os.path.join(XCONF_PATH, 'inbound_v.json'), 'w', encoding='utf-8') as inbound_v_file:
+            json.dump(inbound_v, inbound_v_file, ensure_ascii=False, indent=2)
+    elif XHPPATH:
+        inbound_v = {
+            "inbounds": [
+                {
+                    "port": V_PORT,
+                    "listen": "::",
+                    "protocol": "vless",
+                    "settings": {
+                        "clients": [
+                            {
+                                "id": UUID
+                            }
+                        ],
+                        "decryption": "none"
+                    },
+                    "streamSettings": {
+                        "network": "xhttp",
+                        "security": "none",
+                        "xhttpSettings": {
+                            "mode": "packet-up",
+                            "path": xhppath
+                        }
+                    },
+                    "sniffing": {
+                        "enabled": True,
+                        "destOverride": [
+                            "http",
+                            "tls",
+                            "quic"
+                        ],
+                        "metadataOnly": False
+                    }
+                }
+            ]
+        };
+        with open(os.path.join(XCONF_PATH, 'inbound_v.json'), 'w', encoding='utf-8') as inbound_v_file:
+            json.dump(inbound_v, inbound_v_file, ensure_ascii=False, indent=2)
+
+    outbound = {
+        "outbounds": [
+            {
+                "tag": "direct",
+                "protocol": "freedom"
+            },
+            {
+                "tag": "block",
+                "protocol": "blackhole"
+            }
         ]
+    };
+    with open(os.path.join(XCONF_PATH, 'outbound.json'), 'w', encoding='utf-8') as outbound_file:
+        json.dump(outbound, outbound_file, ensure_ascii=False, indent=2)
+
+def get_files_for_architecture():
+    arch = os.uname().machine
+    if arch in ['arm', 'arm64', 'aarch64']:
+        base_files = [
+            {'file_name': 'web', 'file_url': 'https://github.com/mytcgd/myfiles/releases/download/main/xray_arm'},
+        ]
+        if OPENSERVER:
+            base_files.append({'file_name': 'bot', 'file_url': 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64'})
+        if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
+            if NEZHA_VERSION == 'V0':
+                base_files.append({'file_name': 'npm', 'file_url': 'https://github.com/kahunama/myfile/releases/download/main/nezha-agent_arm'})
+            elif NEZHA_VERSION == 'V1':
+                base_files.append({'file_name': 'npm', 'file_url': 'https://github.com/mytcgd/myfiles/releases/download/main/nezha-agentv1_arm'})
     else:
         base_files = [
-            {"fileName": "web", "fileUrl": "https://amd64.ssss.nyc.mn/sb"},
-            {"fileName": "bot", "fileUrl": "https://amd64.ssss.nyc.mn/bot"}
+            {'file_name': 'web', 'file_url': 'https://github.com/mytcgd/myfiles/releases/download/main/xray'},
         ]
-
-    if NEZHA_SERVER and NEZHA_KEY:
-        if NEZHA_PORT:
-            npm_url = "https://arm64.ssss.nyc.mn/agent" if architecture == 'arm' else "https://amd64.ssss.nyc.mn/agent"
-            base_files.insert(0, {"fileName": "npm", "fileUrl": npm_url})
-        else:
-            php_url = "https://arm64.ssss.nyc.mn/v1" if architecture == 'arm' else "https://amd64.ssss.nyc.mn/v1"
-            base_files.insert(0, {"fileName": "php", "fileUrl": php_url})
-
+        if OPENSERVER:
+            base_files.append({'file_name': 'bot', 'file_url': 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64'})
+        if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
+            if NEZHA_VERSION == 'V0':
+                base_files.append({'file_name': 'npm', 'file_url': 'https://github.com/kahunama/myfile/releases/download/main/nezha-agent'})
+            elif NEZHA_VERSION == 'V1':
+                base_files.append({'file_name': 'npm', 'file_url': 'https://github.com/mytcgd/myfiles/releases/download/main/nezha-agentv1'})
     return base_files
 
-# Authorize files with execute permission
 def authorize_files(file_paths):
+    new_permissions = 0o775
+
     for relative_file_path in file_paths:
         absolute_file_path = os.path.join(FILE_PATH, relative_file_path)
-        if os.path.exists(absolute_file_path):
-            try:
-                os.chmod(absolute_file_path, 0o775)
-                print(f"Empowerment success for {absolute_file_path}: 775")
-            except Exception as e:
-                print(f"Empowerment failed for {absolute_file_path}: {e}")
+        try:
+            os.chmod(absolute_file_path, new_permissions)
+            print(f"Empowerment success for {absolute_file_path}: {oct(new_permissions)}")
+        except Exception as e:
+            print(f"Empowerment failed for {absolute_file_path}: {e}")
 
-# Configure Argo tunnel
-def argo_type():
-    if not ARGO_AUTH or not ARGO_DOMAIN:
-        print("ARGO_DOMAIN or ARGO_AUTH variable is empty, use quick tunnels")
+def download_function(file_name, file_url):
+    file_path = os.path.join(FILE_PATH, file_name)
+    already_existed = False
+    if os.path.exists(file_path):
+        print(f"{file_name} already exists, skip download")
+        already_existed = True
+        return True, already_existed
+    try:
+        with requests.get(file_url, stream=True) as response, open(file_path, 'wb') as file:
+            shutil.copyfileobj(response.raw, file)
+        return True, already_existed
+    except Exception as e:
+        print(f"Download {file_name} failed: {e}")
+        return False, already_existed
+
+def download_files():
+    files_to_download = get_files_for_architecture()
+
+    if not files_to_download:
+        print("Can't find a file for the current architecture")
         return
 
-    if "TunnelSecret" in ARGO_AUTH:
-        with open(os.path.join(FILE_PATH, 'tunnel.json'), 'w') as f:
-            f.write(ARGO_AUTH)
-        
-        tunnel_id = ARGO_AUTH.split('"')[11]
-        tunnel_yml = f"""
-tunnel: {tunnel_id}
+    downloaded_files = []
+
+    for file_info in files_to_download:
+        file_name = file_info['file_name']
+        file_url = file_info['file_url']
+        download_result, already_existed = download_function(file_name, file_url)
+        if download_result:
+            if not already_existed:
+                print(f"Downloaded {file_name} successfully")
+            downloaded_files.append(file_name)
+
+    files_to_authorize = downloaded_files
+    authorize_files(files_to_authorize)
+
+def argo_config():
+    if not ARGO_AUTH or not ARGO_DOMAIN:
+        print("ARGO_DOMAIN or ARGO_AUTH is empty, use quick Tunnels")
+        return
+
+    if 'TunnelSecret' in ARGO_AUTH:
+        with open(os.path.join(FILE_PATH, 'tunnel.json'), 'w') as file:
+            file.write(ARGO_AUTH)
+        tunnel_yaml = f"""tunnel: {ARGO_AUTH.split('"')[11]}
 credentials-file: {os.path.join(FILE_PATH, 'tunnel.json')}
 protocol: http2
 
 ingress:
   - hostname: {ARGO_DOMAIN}
-    service: http://localhost:{ARGO_PORT}
+    service: http://localhost:{V_PORT}
     originRequest:
       noTLSVerify: true
   - service: http_status:404
 """
-        with open(os.path.join(FILE_PATH, 'tunnel.yml'), 'w') as f:
-            f.write(tunnel_yml)
+        with open(os.path.join(FILE_PATH, 'tunnel.yml'), 'w') as file:
+            file.write(tunnel_yaml)
     else:
-        print("ARGO_AUTH mismatch TunnelSecret, use token connect to tunnel")
+        print("Use token connect to tunnel")
 
-# Execute shell command and return output
-def exec_cmd(command):
-    try:
-        process = subprocess.Popen(
-            command, 
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        stdout, stderr = process.communicate()
-        return stdout + stderr
-    except Exception as e:
-        print(f"Error executing command: {e}")
-        return str(e)
-
-# Download and run necessary files
-async def download_files_and_run():
-    global private_key, public_key
-    
-    architecture = get_system_architecture()
-    files_to_download = get_files_for_architecture(architecture)
-    
-    if not files_to_download:
-        print("Can't find a file for the current architecture")
-        return
-    
-    # Download all files
-    download_success = True
-    for file_info in files_to_download:
-        if not download_file(file_info["fileName"], file_info["fileUrl"]):
-            download_success = False
-    
-    if not download_success:
-        print("Error downloading files")
-        return
-    
-    # Authorize files
-    files_to_authorize = ['npm', 'web', 'bot'] if NEZHA_PORT else ['php', 'web', 'bot']
-    authorize_files(files_to_authorize)
-    
-    # Check TLS
-    port = NEZHA_SERVER.split(":")[-1] if ":" in NEZHA_SERVER else ""
-    if port in ["443", "8443", "2096", "2087", "2083", "2053"]:
-        nezha_tls = "true"
+def get_cloud_flare_args():
+    args = ""
+    if re.match(r"^[A-Z0-9a-z=]{120,250}$", ARGO_AUTH):
+        args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token {ARGO_AUTH}"
+    elif "TunnelSecret" in ARGO_AUTH:
+        args = f"tunnel --edge-ip-version auto --config {FILE_PATH}/tunnel.yml run"
     else:
-        nezha_tls = "false"
+        args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile {FILE_PATH}/boot.log --loglevel info --url http://localhost:{V_PORT}"
+    return args
 
-    # Configure nezha
-    if NEZHA_SERVER and NEZHA_KEY:
-        if not NEZHA_PORT:
-            # Generate config.yaml for v1
-            config_yaml = f"""
-client_secret: {NEZHA_KEY}
+def nezconfig():
+    NEZHA_TLS = ''
+    valid_ports = ['443', '8443', '2096', '2087', '2083', '2053']
+    if NEZHA_VERSION == 'V0':
+        if NEZHA_PORT in valid_ports:
+            NEZHA_TLS = '--tls'
+        return NEZHA_TLS
+    elif NEZHA_VERSION == 'V1':
+        if NEZHA_PORT in valid_ports:
+            NEZHA_TLS = 'true'
+        else:
+            NEZHA_TLS = 'false'
+        try:
+            nez_yml = f"""client_secret: {NEZHA_KEY}
 debug: false
 disable_auto_update: true
 disable_command_execute: false
@@ -286,519 +402,324 @@ disable_force_update: true
 disable_nat: false
 disable_send_query: false
 gpu: false
-insecure_tls: true
+insecure_tls: false
 ip_report_period: 1800
 report_delay: 4
-server: {NEZHA_SERVER}
-skip_connection_count: true
-skip_procs_count: true
+server: {NEZHA_SERVER}:{NEZHA_PORT}
+skip_connection_count: false
+skip_procs_count: false
 temperature: false
-tls: {nezha_tls}
+tls: {NEZHA_TLS}
 use_gitee_to_upgrade: false
 use_ipv6_country_code: false
-uuid: {UUID}"""
-            
-            with open(os.path.join(FILE_PATH, 'config.yaml'), 'w') as f:
-                f.write(config_yaml)
-    
-    # Generate reality-keypair
-    keypair_output = exec_cmd(f"{os.path.join(FILE_PATH, 'web')} generate reality-keypair")
-    
-    # Extract private and public keys
-    private_key_match = re.search(r'PrivateKey:\s*(.*)', keypair_output)
-    public_key_match = re.search(r'PublicKey:\s*(.*)', keypair_output)
-    
-    if private_key_match and public_key_match:
-        private_key = private_key_match.group(1)
-        public_key = public_key_match.group(1)
-        
-        print(f'Private Key: {private_key}')
-        print(f'Public Key: {public_key}')
+uuid: {UUID}
+"""
+            with open(os.path.join(FILE_PATH, 'config.yml'), 'w') as file:
+                file.write(nez_yml)
+            print("config.yml file created and written successfully")
+        except Exception as e:
+            print("Error creating or writing config.yml file: {e}")
     else:
-        print('Failed to extract privateKey or publicKey from output.')
-        return
-    
-    # Generate private.key
-    exec_cmd('openssl ecparam -genkey -name prime256v1 -out "private.key"')
-    
-    # Generate cert.pem
-    exec_cmd('openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=bing.com"')
-    
-    # Generate configuration file
-    config = {
-        "log": {
-            "disabled": True,
-            "level": "error",
-            "timestamp": True
-        },
-        "inbounds": [
-            {
-                "tag": "vmess-ws-in",
-                "type": "vmess",
-                "listen": "::",
-                "listen_port": ARGO_PORT,
-                "users": [
-                    {
-                        "uuid": UUID
-                    }
-                ],
-                "transport": {
-                    "type": "ws",
-                    "path": "/vmess-argo",
-                    "early_data_header_name": "Sec-WebSocket-Protocol"
-                }
-            }
-        ],
-        "endpoints": [
-            {
-                "type": "wireguard",
-                "tag": "warp-out",
-                "mtu": 1280,
-                "address": [
-                    "172.16.0.2/32",
-                    "2606:4700:110:8dfe:d141:69bb:6b80:925/128"
-                ],
-                "private_key": "YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
-                "peers": [
-                    {
-                        "address": "engage.cloudflareclient.com",
-                        "port": 2408,
-                        "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-                        "allowed_ips": ["0.0.0.0/0", "::/0"],
-                        "reserved": [78, 135, 76]
-                    }
-                ]
-            }
-        ],
-        "outbounds": [
-            {
-                "type": "direct",
-                "tag": "direct"
-            }
-        ],
-        "route": {
-            "rule_set": [
-                {
-                    "tag": "netflix",
-                    "type": "remote",
-                    "format": "binary",
-                    "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-netflix.srs",
-                    "download_detour": "direct"
-                },
-                {
-                    "tag": "openai",
-                    "type": "remote",
-                    "format": "binary",
-                    "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/openai.srs",
-                    "download_detour": "direct"
-                }
-            ],
-            "rules": [
-                {
-                    "rule_set": ["openai", "netflix"],
-                    "outbound": "warp-out"
-                }
-            ],
-            "final": "direct"
-        }
-    }
-    
-    # 根据端口变量动态添加配置
-    if REALITY_PORT and REALITY_PORT > 0:
-        reality_config = {
-            "tag": "vless-in",
-            "type": "vless",
-            "listen": "::",
-            "listen_port": REALITY_PORT,
-            "users": [
-                {
-                    "uuid": UUID,
-                    "flow": "xtls-rprx-vision"
-                }
-            ],
-            "tls": {
-                "enabled": True,
-                "server_name": "www.iij.ad.jp",
-                "reality": {
-                    "enabled": True,
-                    "handshake": {
-                        "server": "www.iij.ad.jp",
-                        "server_port": 443
-                    },
-                    "private_key": private_key,
-                    "short_id": [""]
-                }
-            }
-        }
-        config["inbounds"].append(reality_config)
-    
-    if HY2_PORT and HY2_PORT > 0:
-        hysteria_config = {
-            "tag": "hysteria-in",
-            "type": "hysteria2",
-            "listen": "::",
-            "listen_port": HY2_PORT,
-            "users": [
-                {
-                    "password": UUID
-                }
-            ],
-            "masquerade": "https://bing.com",
-            "tls": {
-                "enabled": True,
-                "alpn": ["h3"],
-                "certificate_path": "cert.pem",
-                "key_path": "private.key"
-            }
-        }
-        config["inbounds"].append(hysteria_config)
-    
-    if TUIC_PORT and TUIC_PORT > 0:
-        tuic_config = {
-            "tag": "tuic-in",
-            "type": "tuic",
-            "listen": "::",
-            "listen_port": TUIC_PORT,
-            "users": [
-                {
-                    "uuid": UUID
-                }
-            ],
-            "congestion_control": "bbr",
-            "tls": {
-                "enabled": True,
-                "alpn": ["h3"],
-                "certificate_path": "cert.pem",
-                "key_path": "private.key"
-            }
-        }
-        config["inbounds"].append(tuic_config)
-    
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
-    
-    # Run nezha
-    if NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
-        tls_ports = ['443', '8443', '2096', '2087', '2083', '2053']
-        nezha_tls = '--tls' if NEZHA_PORT in tls_ports else ''
-        command = f"nohup {os.path.join(FILE_PATH, 'npm')} -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {nezha_tls} --disable-auto-update --report-delay 4 --skip-conn --skip-procs >/dev/null 2>&1 &"
-        
+        return None
+
+async def runbot(args):
+    bot_path = os.path.join(FILE_PATH, 'bot')
+    if os.path.exists(bot_path):
+        cmd = f'nohup {FILE_PATH}/bot {args} >/dev/null 2>&1 &'
         try:
-            exec_cmd(command)
-            print('npm is running')
-            time.sleep(1)
+            proc_bot = await exec_promise(cmd)
         except Exception as e:
-            print(f"npm running error: {e}")
-    
-    elif NEZHA_SERVER and NEZHA_KEY:
-        # Run V1
-        command = f"nohup {FILE_PATH}/php -c \"{FILE_PATH}/config.yaml\" >/dev/null 2>&1 &"
-        try:
-            exec_cmd(command)
-            print('php is running')
-            time.sleep(1)
-        except Exception as e:
-            print(f"php running error: {e}")
+            print(f"Error launching bot: {getattr(e, 'stderr', str(e))} (Code: {getattr(e, 'code', -1)})")
     else:
-        print('NEZHA variable is empty, skipping running')
-    
-    # Run sbX
-    command = f"nohup {os.path.join(FILE_PATH, 'web')} run -c {os.path.join(FILE_PATH, 'config.json')} >/dev/null 2>&1 &"
-    try:
-        exec_cmd(command)
-        print('web is running')
-        time.sleep(1)
-    except Exception as e:
-        print(f"web running error: {e}")
-    
-    # Run cloudflared
-    if os.path.exists(os.path.join(FILE_PATH, 'bot')):
-        if re.match(r'^[A-Z0-9a-z=]{120,250}$', ARGO_AUTH):
-            args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 run --token {ARGO_AUTH}"
-        elif "TunnelSecret" in ARGO_AUTH:
-            args = f"tunnel --edge-ip-version auto --config {os.path.join(FILE_PATH, 'tunnel.yml')} run"
-        else:
-            args = f"tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile {os.path.join(FILE_PATH, 'boot.log')} --loglevel info --url http://localhost:{ARGO_PORT}"
-        
+        print("bot file not found, skip running")
+
+async def runweb():
+    web_path = os.path.join(FILE_PATH, 'web')
+    if os.path.exists(web_path):
+        cmd = f'nohup {FILE_PATH}/web run -confdir {FILE_PATH}/xconf >/dev/null 2>&1 &'
         try:
-            exec_cmd(f"nohup {os.path.join(FILE_PATH, 'bot')} {args} >/dev/null 2>&1 &")
-            print('bot is running')
-            time.sleep(2)
+            proc_web = await exec_promise(cmd)
         except Exception as e:
-            print(f"Error executing command: {e}")
-    
-    time.sleep(5)
-    
-    # Extract domains and generate sub.txt
-    await extract_domains()
-
-# Extract domains from cloudflared logs
-async def extract_domains():
-    argo_domain = None
-
-    if ARGO_AUTH and ARGO_DOMAIN:
-        argo_domain = ARGO_DOMAIN
-        print(f'ARGO_DOMAIN: {argo_domain}')
-        await generate_links(argo_domain)
+            print(f"Error launching web: {getattr(e, 'stderr', str(e))} (Code: {getattr(e, 'code', -1)})")
     else:
-        try:
-            with open(boot_log_path, 'r') as f:
-                file_content = f.read()
-            
-            lines = file_content.split('\n')
-            argo_domains = []
-            
-            for line in lines:
-                domain_match = re.search(r'https?://([^ ]*trycloudflare\.com)/?', line)
-                if domain_match:
-                    domain = domain_match.group(1)
-                    argo_domains.append(domain)
-            
-            if argo_domains:
-                argo_domain = argo_domains[0]
-                print(f'ArgoDomain: {argo_domain}')
-                await generate_links(argo_domain)
-            else:
-                print('ArgoDomain not found, re-running bot to obtain ArgoDomain')
-                # Remove boot.log and restart bot
-                if os.path.exists(boot_log_path):
-                    os.remove(boot_log_path)
-                
-                try:
-                    exec_cmd('pkill -f "[b]ot" > /dev/null 2>&1')
-                except:
-                    pass
-                
-                time.sleep(1)
-                args = f'tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile {FILE_PATH}/boot.log --loglevel info --url http://localhost:{ARGO_PORT}'
-                exec_cmd(f'nohup {os.path.join(FILE_PATH, "bot")} {args} >/dev/null 2>&1 &')
-                print('bot is running.')
-                time.sleep(6)  # Wait 6 seconds
-                await extract_domains()  # Try again
-        except Exception as e:
-            print(f'Error reading boot.log: {e}')
+        print("web file not found, skip running")
 
-# Upload nodes to subscription service
-def upload_nodes():
-    if UPLOAD_URL and PROJECT_URL:
-        subscription_url = f"{PROJECT_URL}/{SUB_PATH}"
-        json_data = {
-            "subscription": [subscription_url]
-        }
-        
-        try:
-            response = requests.post(
-                f"{UPLOAD_URL}/api/add-subscriptions",
-                json=json_data,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if response.status_code == 200:
-                print('Subscription uploaded successfully')
-        except Exception as e:
-            pass
-    
-    elif UPLOAD_URL:
-        if not os.path.exists(list_path):
-            return
-        
-        with open(list_path, 'r') as f:
-            content = f.read()
-        
-        nodes = [line for line in content.split('\n') if any(protocol in line for protocol in ['vless://', 'vmess://', 'trojan://', 'hysteria2://', 'tuic://'])]
-        
-        if not nodes:
-            return
-        
-        json_data = json.dumps({"nodes": nodes})
-        
-        try:
-            response = requests.post(
-                f"{UPLOAD_URL}/api/add-nodes",
-                data=json_data,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if response.status_code == 200:
-                print('Nodes uploaded successfully')
-        except:
-            return None
-    else:
-        return
-    
-# Send notification to Telegram
-def send_telegram():
-    if not BOT_TOKEN or not CHAT_ID:
-        print('TG variables is empty, Skipping push nodes to TG')
-        return
-    
-    try:
-        with open(sub_path, 'r') as f:
-            message = f.read()
-        
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        
-        escaped_name = re.sub(r'([_*\[\]()~>#+=|{}.!\-])', r'\\\1', NAME)
-        
-        params = {
-            "chat_id": CHAT_ID,
-            "text": f"**{escaped_name}节点推送通知**\n{message}",
-            "parse_mode": "MarkdownV2"
-        }
-        
-        requests.post(url, params=params)
-        print('Telegram message sent successfully')
-    except Exception as e:
-        print(f'Failed to send Telegram message: {e}')
-
-# Generate links and subscription content
-async def generate_links(argo_domain):
-    SERVER_IP = ''
-    try:
-        SERVER_IP = subprocess.check_output('curl -s --max-time 2 ipv4.ip.sb', shell=True).decode().strip()
-    except:
-        try:
-            SERVER_IP = f"[{subprocess.check_output('curl -s --max-time 1 ipv6.ip.sb', shell=True).decode().strip()}]"
-        except Exception as e:
-            print(f'Failed to get IP address: {e}')
-
-    # Get ISP info
-    try:
-        meta_info = subprocess.check_output(
-            'curl -s https://speed.cloudflare.com/meta | awk -F\\" \'{print $26"-"$18}\' | sed -e \'s/ /_/g\'',
-            shell=True
-        ).decode().strip()
-        ISP = meta_info
-    except:
-        ISP = "Unknown"
-
-    # Wait 2 seconds before generating nodes
-    time.sleep(2)
-
-    # vmess node
-    vmess_config = {
-        "v": "2","ps": f"{NAME}-{ISP}","add": CFIP,"port": CFPORT,"id": UUID,"aid": "0","scy": "none","net": "ws","type": "none",
-        "host": argo_domain,"path": "/vmess-argo?ed=2560","tls": "tls","sni": argo_domain,"alpn": "","fp": "firefox"
-        }
-    
-    vmess_node = f"vmess://{base64.b64encode(json.dumps(vmess_config).encode()).decode()}"
-
-    sub_txt = vmess_node  # Always generate vmess node
-
-    # Generate other nodes based on port
-    if TUIC_PORT is not None:
-        tuic_node = f"\ntuic://{UUID}:@{SERVER_IP}:{TUIC_PORT}?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#{NAME}-{ISP}"
-        sub_txt += tuic_node
-
-    if HY2_PORT is not None:
-        hysteria_node = f"\nhysteria2://{UUID}@{SERVER_IP}:{HY2_PORT}/?sni=www.bing.com&insecure=1&alpn=h3&obfs=none#{NAME}-{ISP}"
-        sub_txt += hysteria_node
-
-    if REALITY_PORT is not None:
-        vless_node = f"\nvless://{UUID}@{SERVER_IP}:{REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.iij.ad.jp&fp=firefox&pbk={public_key}&type=tcp&headerType=none#{NAME}-{ISP}"
-        sub_txt += vless_node
-
-    # Save to files
-    with open(sub_path, 'w') as f:
-        f.write(base64.b64encode(sub_txt.encode()).decode())
-    
-    with open(list_path, 'w') as f:
-        f.write(sub_txt)
-    
-    print(base64.b64encode(sub_txt.encode()).decode())
-    
-    print(f"{FILE_PATH}/sub.txt saved successfully")
-    
-    # Additional actions
-    send_telegram()
-    upload_nodes()
-  
-    return sub_txt   
- 
-# Add automatic access task
-def add_visit_task():
-    if not AUTO_ACCESS or not PROJECT_URL:
-        print("Skipping adding automatic access task")
-        return
-    
-    try:
-        response = requests.post(
-            'https://keep.gvrander.eu.org/add-url',
-            json={"url": PROJECT_URL},
-            headers={"Content-Type": "application/json"}
-        )
-        print('automatic access task added successfully')
-    except Exception as e:
-        print(f'Failed to add URL: {e}')
-
-# Clean up files after 90 seconds
-def clean_files():
-    def _cleanup():
-        time.sleep(90)  # Wait 90 seconds
-        files_to_delete = [boot_log_path, config_path, list_path, web_path, bot_path, php_path, npm_path]
-        
-        if NEZHA_PORT:
-            files_to_delete.append(npm_path)
-        elif NEZHA_SERVER and NEZHA_KEY:
-            files_to_delete.append(php_path)
-        
-        for file in files_to_delete:
+async def runnpm(NEZHA_TLS):
+    npm_path = os.path.join(FILE_PATH, 'npm')
+    if os.path.exists(npm_path):
+        if NEZHA_VERSION == 'V0':
+            cmd = f'nohup {FILE_PATH}/npm -s {NEZHA_SERVER}:{NEZHA_PORT} -p {NEZHA_KEY} {NEZHA_TLS} --report-delay=4 --skip-conn --skip-procs --disable-auto-update >/dev/null 2>&1 &'
             try:
-                if os.path.exists(file):
-                    if os.path.isdir(file):
-                        shutil.rmtree(file)
-                    else:
-                        os.remove(file)
-            except:
-                pass
-        
-        print('\033c', end='')
-        print('App is running')
-        print('Thank you for using this script, enjoy!')
-    
-    threading.Thread(target=_cleanup, daemon=True).start()
-    
-# Main function to start the server
-async def start_server():
-    delete_nodes()
-    cleanup_old_files()
-    create_directory()
-    argo_type()
-    await download_files_and_run()
-    add_visit_task()
-    
-    server_thread = Thread(target=run_server)
-    server_thread.daemon = True
-    server_thread.start()   
-    
-    clean_files()
-    
-def run_server():
-    try:
-        server = HTTPServer(('0.0.0.0', PORT), RequestHandler)
-        print(f"Server is running on port {PORT}")
-        print(f"Running done！")
-        server.serve_forever()
-    except OSError as e:
-        print(f"Server failed to start on port {PORT}: {e}")
-    
-# 使用 Streamlit 专属资源缓存保护初始化逻辑，保证全局只执行一次
-@st.cache_resource
-def init_app_services():
-    print("[+] 正在初始化应用并启动核心服务...")
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_server()) 
-    return "Running"
+                proc_npm = await exec_promise(cmd)
+            except Exception as e:
+                print(f"Error launching {FILE_PATH}/npm: {getattr(e, 'stderr', str(e))} (Code: {getattr(e, 'code', -1)})")
+        elif NEZHA_VERSION == 'V1':
+            cmd = f'nohup {FILE_PATH}/npm -c {FILE_PATH}/config.yml >/dev/null 2>&1 &'
+            try:
+                proc_npm = await exec_promise(cmd)
+            except Exception as e:
+                print(f"Error launching npm: {getattr(e, 'stderr', str(e))} (Code: {getattr(e, 'code', -1)})")
+    else:
+        print("npm file not found, skip running")
 
-def main():
-    # 只要这行代码被执行，Streamlit 就会确保它在第一次运行后被“冻结”，避免端口二次绑定
-    service_status = init_app_services()
-    
-    # 渲染一个简易的前端，避免 Streamlit 抛出空脚本警告
-    st.title("🚀 后台核心监控面板")
-    st.success(f"当前核心运行状态: {service_status}")
-    st.info(f"订阅路径: `/{SUB_PATH}` | 服务端口: `{PORT}`")
+async def runapp(args, NEZHA_TLS):
+    if OPENSERVER:
+        bot_pids = await detect_process("bot")
+        if bot_pids:
+            # print(f"bot is already running. PIDs: {bot_pids}")
+            pass
+        else:
+            await runbot(args)
+        await asyncio.sleep(5)
+        print(f"bot is running")
+    else:
+        print("bot is not allowed, skip running")
+
+    web_pids = await detect_process("web")
+    if web_pids:
+        # print(f"web is already running. PIDs: {web_pids}")
+        pass
+    else:
+        await runweb()
+    await asyncio.sleep(1)
+    print(f"web is running")
+
+    if NEZHA_VERSION and NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
+        npm_pids = await detect_process("npm")
+        if npm_pids:
+            # print(f"npm is already running. PIDs: {npm_pids}")
+            pass
+        else:
+            await runnpm(NEZHA_TLS)
+        await asyncio.sleep(1)
+        print(f"npm is running")
+    else:
+        print("npm variable is empty, skip running")
+
+async def keep_alive(args, NEZHA_TLS):
+    if OPENSERVER:
+        bot_pids = await detect_process("bot")
+        if bot_pids:
+            # print(f"bot is already running. PIDs: {bot_pids}")
+            pass
+        else:
+            print(f"bot runs again !")
+            await runbot(args)
+
+    await asyncio.sleep(5)
+
+    web_pids = await detect_process("web")
+    if web_pids:
+        # print(f"web is already running. PIDs: {web_pids}")
+        pass
+    else:
+        print(f"web runs again !")
+        await runweb()
+
+    await asyncio.sleep(5)
+
+    if NEZHA_VERSION and NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
+        npm_pids = await detect_process("npm")
+        if npm_pids:
+            # print(f"npm is already running. PIDs: {npm_pids}")
+            pass
+        else:
+            print(f"npm runs again !")
+            await runnpm(NEZHA_TLS)
+
+def getArgoDomainFromLog():
+    bootfile_path = os.path.join(FILE_PATH, 'boot.log')
+    if os.path.exists(bootfile_path) and os.path.getsize(bootfile_path) > 0:
+        with open(bootfile_path, 'r', encoding='utf-8') as f:
+            file_content = f.read()
+
+        regex = re.compile(r'info.*https:\/\/(.*trycloudflare\.com)')
+        matches = regex.findall(file_content)
+        last_match = matches[-1] if matches else None
+        return last_match
+    else:
+        return None
+
+def buildurl(argo_domain, ISP):
+    Node_DATA = ""
+    if VLPATH:
+        Node_DATA = f"vless://{UUID}@{CFIP}:{CFPORT}?encryption=none&security=tls&sni={argo_domain}&type=ws&host={argo_domain}&path=%2F{VLPATH}%3Fed%3D2560#{ISP}-{SUB_NAME}"
+    elif XHPPATH:
+        Node_DATA = f"vless://{UUID}@{CFIP}:{CFPORT}?encryption=none&security=tls&sni={argo_domain}&type=xhttp&host={argo_domain}&path=%2F{XHPPATH}%3Fed%3D2560&mode=packet-up#{ISP}-{SUB_NAME}"
+    return Node_DATA
+
+async def extract_domains(args, ISP):
+    current_argo_domain = ''
+    if OPENSERVER:
+        if ARGO_AUTH and ARGO_DOMAIN:
+            current_argo_domain = ARGO_DOMAIN
+        else:
+            try:
+                await asyncio.sleep(3)
+                current_argo_domain = getArgoDomainFromLog()
+                if not current_argo_domain:
+                    try:
+                        print('boot.log not found, re-running bot')
+                        bootfile_path = os.path.join(FILE_PATH, 'boot.log')
+                        if os.path.exists(bootfile_path):
+                            os.unlink(bootfile_path)
+                            await asyncio.sleep(1)
+                        await kill_process("bot")
+                        await asyncio.sleep(1)
+                        await runbot(args)
+                        print(f"bot is running")
+                        await asyncio.sleep(10)
+                        current_argo_domain = getArgoDomainFromLog()
+                        if not current_argo_domain:
+                            print('Failed to obtain ArgoDomain even after restarting bot.')
+                    except Exception as error:
+                        print('Error in bot process management:', error)
+                        return
+            except Exception as error:
+                # print(f"Failed to get current_argo_domain: {error}")
+                pass
+
+    if MY_DOMAIN:
+        current_argo_domain = MY_DOMAIN
+        # print('Overriding ArgoDomain with MY_DOMAIN:', current_argo_domain)
+
+    argo_domain = current_argo_domain
+    if not argo_domain:
+        print('No domain could be determined. Cannot construct UPLOAD_DATA')
+        UPLOAD_DATA = None
+        return
+
+    UPLOAD_DATA = buildurl(argo_domain, ISP)
+    # print(UPLOAD_DATA)
+    return argo_domain, UPLOAD_DATA
+
+def clean_string(s):
+    if isinstance(s, str):
+        result = re.sub(r'[\s,.]', '_', s)
+        result = re.sub(r'_+', '_', result)
+        return result.strip('_')
+    return s
+
+def get_ip_and_isp():
+    ipapiurl = [
+        'https://api.ip.sb/geoip/',
+        'http://ip-api.com/json/',
+    ]
+
+    if MYIP_URL and MYIP_URL.strip():
+        ipapiurl.append(MYIP_URL.strip())
+
+    for url in ipapiurl:
+        try:
+            response = requests.get(url, timeout=3)
+            data = response.json()
+
+            raw_ip = data.get('ip') or data.get('query')
+            if raw_ip:
+                country = data.get('country_code') or data.get('countryCode') or 'UN'
+                isp_raw = data.get('isp', 'Unknown')
+                isp_cleaned = clean_string(isp_raw).replace(' ', '_')
+                ISP = f"{country}_{isp_cleaned}"
+                # print(ISP)
+                return ISP
+        except:
+            continue
+    return 'UN'
+
+def generate_links(UPLOAD_DATA):
+    if UPLOAD_DATA:
+        file_path = os.path.join(FILE_PATH, 'log.txt')
+        with open(file_path, 'w') as f:
+            encoded_data = base64.b64encode(UPLOAD_DATA.encode('utf-8')).decode('utf-8')
+            f.write(encoded_data)
+            # print(encoded_data)
+
+async def cleanfiles():
+    await asyncio.sleep(60)
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print('App is running')
+
+async def upload_subscription(sub_name, upload_data, sub_url):
+    def _sync_upload():
+        data = json.dumps({"URL_NAME": sub_name, "URL": upload_data})
+        headers = {'Content-Type': 'application/json', 'Content-Length': str(len(data))}
+        try:
+            response = requests.post(sub_url, data=data, headers=headers, verify=True)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            raise Exception(f"Upload failed: {str(e)}")
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync_upload)
+
+async def subupload(initial_argo_domain, initial_upload_data, args, ISP):
+    previous_argo_domain = initial_argo_domain
+    argo_domain = initial_argo_domain
+    UPLOAD_DATA = initial_upload_data
+
+    while True:
+        if argo_domain != previous_argo_domain:
+            response = await upload_subscription(SUB_NAME, UPLOAD_DATA, SUB_URL)
+            generate_links(UPLOAD_DATA)
+            previous_argo_domain = argo_domain
+        else:
+            # print(f"domain name has not been updated, no need to upload")
+            pass
+
+        await asyncio.sleep(INTERVAL_SECONDS)
+
+        extracted = await extract_domains(args, ISP)
+        if len(extracted) == 2:
+            argo_domain, UPLOAD_DATA = extracted
+
+async def keep_alive_run(args, NEZHA_TLS):
+    while True:
+        await asyncio.sleep(INTERVAL_SECONDS)
+        await keep_alive(args, NEZHA_TLS)
+
+# main
+async def main():
+    await kill_process("web")
+    await asyncio.sleep(1)
+    await kill_process("bot")
+    await asyncio.sleep(1)
+    await kill_process("npm")
+    await asyncio.sleep(1)
+    pg.run()
+    createFolder(FILE_PATH)
+    cleanupOldFiles()
+    createFolder(XCONF_PATH)
+
+    generate_config()
+    download_files()
+    ISP = get_ip_and_isp()
+    if OPENSERVER:
+        argo_config()
+        args = get_cloud_flare_args()
+    else:
+        args = None
+    if NEZHA_VERSION and NEZHA_SERVER and NEZHA_PORT and NEZHA_KEY:
+        NEZHA_TLS = nezconfig()
+    else:
+        NEZHA_TLS = None
+
+    await runapp(args, NEZHA_TLS)
+    argo_domain, UPLOAD_DATA = await extract_domains(args, ISP)
+    generate_links(UPLOAD_DATA)
+
+    tasks = [
+        asyncio.create_task(cleanfiles())
+    ]
+    if SUB_URL:
+        response = await upload_subscription(SUB_NAME, UPLOAD_DATA, SUB_URL)
+        if KEEPALIVE and OPENSERVER and not ARGO_AUTH and not ARGO_DOMAIN:
+            tasks.append(asyncio.create_task(subupload(argo_domain, UPLOAD_DATA, args, ISP)))
+    if KEEPALIVE:
+        await keep_alive(args, NEZHA_TLS)
+        tasks.append(asyncio.create_task(keep_alive_run(args, NEZHA_TLS)))
+    await asyncio.gather(*tasks)
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
