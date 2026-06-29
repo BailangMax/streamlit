@@ -4,14 +4,12 @@ on:
   schedule:
     # 北京时间每日 3:00 和 15:00 (即 UTC 19:00 和 7:00)
     - cron: '0 7,19 * * *'
-  
   # 允许手动触发
   workflow_dispatch:
 
 jobs:
   wake_up:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: write
 
@@ -21,19 +19,15 @@ jobs:
         with:
           persist-credentials: true 
 
-      # --- 第一阶段：尝试通过 Git 提交触发后端重部署 (可选，作为双重保险) ---
+      # --- 第一阶段：尝试通过 Git 提交触发后端重部署 ---
       - name: Git Auto-Commit to Trigger Build
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-          # 写入当前时间到日志文件，确保文件有实质性变化
           echo "Wake up trigger: $(date)" > last_waked_up.log
-          
           git add last_waked_up.log
           git commit -m "Auto-wake: update timestamp" || echo "No changes to commit"
-          
-          # 拉取最新代码防止冲突，然后推送
           git pull --rebase
           git push
 
@@ -60,57 +54,72 @@ jobs:
           from selenium.webdriver.chrome.options import Options
           from selenium.webdriver.common.by import By
           
-          # 获取 URL
           url = os.environ.get("TARGET_URL")
           print(f"🚀 Starting Selenium to visit: {url}")
 
-          # 配置无头 Chrome 浏览器 (Headless Chrome)
           chrome_options = Options()
           chrome_options.add_argument("--headless") 
           chrome_options.add_argument("--no-sandbox")
           chrome_options.add_argument("--disable-dev-shm-usage")
           chrome_options.add_argument("--disable-gpu")
+          # 伪装成真实的 Windows 浏览器，防止被直接判定为 Bot
+          chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
           
-          # 初始化浏览器
           driver = webdriver.Chrome(options=chrome_options)
+          # 设置隐式等待，让 find_elements 找不到时多等一会儿
+          driver.implicitly_wait(10)
           
           try:
+              # 设置窗口大小，确保能截全图
+              driver.set_window_size(1920, 1080)
               driver.get(url)
-              print("Page loaded. Waiting 10s for JavaScript execution...")
-              time.sleep(10) # 等待页面加载
+              print("Page loaded. Waiting 10s for potential redirects...")
+              time.sleep(10)
               
               print(f"Page Title: {driver.title}")
               
-              # 查找所有的按钮
+              # 【核心修改】：拍下当前页面的照片用于排错
+              driver.save_screenshot("debug_screenshot.png")
+              print("📸 Screenshot saved to debug_screenshot.png")
+              
               buttons = driver.find_elements(By.TAG_NAME, "button")
               clicked = False
               
-              # 遍历按钮，寻找唤醒按钮
               for btn in buttons:
                   btn_text = btn.text
-                  # Streamlit 的唤醒按钮通常包含 "Yes" 或 "wake"
                   if "Yes" in btn_text or "wake" in btn_text or "Back up" in btn_text:
                       print(f"💤 Found sleeping button: '{btn_text}', clicking it now...")
                       btn.click()
                       clicked = True
-                      
-                      # 点击后等待应用重启
                       print("⏳ Waiting 20s for app to restart...")
                       time.sleep(20)
+                      # 唤醒后再截一张图确认
+                      driver.save_screenshot("after_wake_screenshot.png")
                       break
               
               if not clicked:
-                  print("✅ No wake-up button found. The app is likely already running.")
+                  print("✅ No wake-up button found. The app might be running, or we are blocked.")
                   
-              # 再次打印标题确认状态
-              print(f"Final Page Title: {driver.title}")
-
           except Exception as e:
               print(f"❌ Error occurred: {e}")
+              # 哪怕报错了，也尝试截图看看死在哪一步
+              driver.save_screenshot("error_screenshot.png")
               exit(1)
           finally:
               driver.quit()
           EOF
+
+      # --- 【新增阶段】：上传截图到 GitHub ---
+      - name: Upload Debug Screenshots
+        uses: actions/upload-artifact@v4
+        if: always() # 无论成功还是失败，都执行上传操作
+        with:
+          name: selenium-screenshots
+          path: |
+            debug_screenshot.png
+            after_wake_screenshot.png
+            error_screenshot.png
+          retention-days: 3 # 截图保留3天
 
       # --- 第四阶段：通知 ---
       - name: Send Telegram notification on success
@@ -124,8 +133,6 @@ jobs:
             
             应用链接: https://axxsxx.streamlit.app/
             触发时间: (UTC ${{ github.event.schedule }})
-            
-            已执行 Selenium 模拟访问与点击。
 
       - name: Send Telegram notification on failure
         if: failure()
@@ -135,5 +142,4 @@ jobs:
           to: ${{ secrets.TELEGRAM_TO }}
           message: |
             ❌ Streamlit 唤醒任务失败！
-            
-            Selenium 脚本执行出错，请检查 GitHub Actions 日志。
+            请检查 GitHub Actions 日志。
