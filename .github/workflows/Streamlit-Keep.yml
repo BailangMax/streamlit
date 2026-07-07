@@ -6,7 +6,7 @@ on:
       target_url:
         description: '目标链接'
         required: false
-        default: 'https://python-xray-argo.streamlit.app'
+        default: 'https://app-vcdraa2ybh9gaveplsdgpi.streamlit.app/'
         type: string
   schedule:
     - cron: '0 */6 * * *'   # 每6小时自动运行一次
@@ -41,7 +41,7 @@ jobs:
           
       - name: 执行唤醒脚本
         env:
-          TARGET_URL: ${{ github.event.inputs.target_url || 'https://python-xray-argo.streamlit.app' }}
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://app-vcdraa2ybh9gaveplsdgpi.streamlit.app/' }}
         run: |
           echo "开始执行 Streamlit 应用唤醒任务..."
           python Keep.py
