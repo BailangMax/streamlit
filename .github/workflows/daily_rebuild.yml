@@ -2,8 +2,8 @@ name: Streamlit Daily Wake up (Selenium)
 
 on:
   schedule:
-    # 北京时间每日 3:00 和 15:00 (即 UTC 19:00 和 7:00)
-    - cron: '0 7,19 * * *'
+    # 每 6 小时运行一次 (即 UTC 0:00, 6:00, 12:00, 18:00)
+    - cron: '0 */6 * * *'
   # 允许手动触发
   workflow_dispatch:
 
