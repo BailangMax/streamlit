@@ -45,7 +45,7 @@ jobs:
       - name: Wake up Streamlit with Selenium
         env:
           # !!! 请在这里修改为你自己的 Streamlit App 链接 !!!
-          TARGET_URL: 'https://app-vcdraa2ybh9gaveplsdgpi.streamlit.app/'
+          TARGET_URL: 'https://axxsxs.streamlit.app/'
         run: |
           python <<EOF
           import os
@@ -131,7 +131,7 @@ jobs:
           message: |
             ✅ Streamlit 唤醒任务执行完毕！
             
-            应用链接: https://app-vcdraa2ybh9gaveplsdgpi.streamlit.app/
+            应用链接: https://axxsxs.streamlit.app/
             触发时间: (UTC ${{ github.event.schedule }})
 
       - name: Send Telegram notification on failure
